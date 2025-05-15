@@ -122,32 +122,25 @@ if company_symbol:
             st.stop()
         
         # Modify the numeric conversion section to handle commas in volume:
-        for col in numeric_cols:
-            # Special handling for volume column
-            if col == 'volume':
-                df[col] = df[col].astype(str).str.replace(',', '').astype(float)
-            else:
-                df[col] = pd.to_numeric(
-                    df[col].astype(str).str.replace('[^\d.]', '', regex=True),
-                    errors='coerce'
-                )
-            
-            if df[col].isnull().any():
-                bad_rows = df[df[col].isnull()][['date', col]].head()
-                st.error(f"❌ Found {df[col].isnull().sum()} invalid values in {col} column. Examples:")
-                st.dataframe(bad_rows)
-                st.stop()
+
 
         # Validate numeric columns
         numeric_cols = ['open', 'high', 'low', 'close', 'volume']
-        for col in numeric_cols:
-            # Debug original values
-            st.write(f"Column '{col}' sample before cleaning:", df[col].head(3))
-            
+            for col in numeric_cols:
+        # Special handling for volume column
+        if col == 'volume':
+            df[col] = df[col].astype(str).str.replace(',', '').astype(float)
+        else:
             df[col] = pd.to_numeric(
                 df[col].astype(str).str.replace('[^\d.]', '', regex=True),
                 errors='coerce'
             )
+        
+        if df[col].isnull().any():
+            bad_rows = df[df[col].isnull()][['date', col]].head()
+            st.error(f"❌ Found {df[col].isnull().sum()} invalid values in {col} column. Examples:")
+            st.dataframe(bad_rows)
+            st.stop()
             
             # Debug cleaned values
             st.write(f"Column '{col}' sample after cleaning:", df[col].head(3))
