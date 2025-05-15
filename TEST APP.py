@@ -54,15 +54,6 @@ for col in ['open', 'high', 'low', 'close']:
 df['volume'] = df['volume'].astype(str).str.replace(',', '').astype(float)
 df = df.dropna().sort_values('date')
 
-# Date Range Selection
-last_date = df['date'].max()
-default_start = max(last_date - timedelta(days=150), df['date'].min())
-date_range = st.slider("Date Range", 
-                      min_value=df['date'].min(),
-                      max_value=last_date,
-                      value=(default_start, last_date))
-df = df[(df['date'] >= date_range[0]) & (df['date'] <= date_range[1])]
-
 # Signal Detection
 df['point_change'] = df['close'].diff()
 df['tag'] = ''
