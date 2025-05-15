@@ -104,25 +104,37 @@ if company_symbol:
         # Convert column names to lowercase
         df.columns = [col.lower() for col in df.columns]
 
+         # Debug: Show raw data
+        st.write("Raw data sample:", df.head(3))
+
         # Check required columns
         required_cols = {'date', 'open', 'high', 'low', 'close', 'volume'}
         if not required_cols.issubset(set(df.columns)):
-            st.error("❌ Missing required columns: date, open, high, low, close, volume")
+            missing = required_cols - set(df.columns)
+            st.error("❌ Missing required columns: {missing}")
             st.stop()
 
         # Convert and validate dates
         df['date'] = pd.to_datetime(df['date'], errors='coerce')
         if df['date'].isnull().any():
-            st.error("❌ Invalid date format in some rows")
+            bad_dates = df[df['date'].isnull()]['date'].head()
+            st.error("❌ Invalid date format in some rows. Exapmles: {bad_dates.tolist()}")
             st.stop()
 
         # Validate numeric columns
         numeric_cols = ['open', 'high', 'low', 'close', 'volume']
         for col in numeric_cols:
+            # Debug original values
+            st.write(f"Column '{col}' sample before cleaning:", df[col].head(3))
+            
             df[col] = pd.to_numeric(
                 df[col].astype(str).str.replace('[^\d.]', '', regex=True),
                 errors='coerce'
             )
+            
+            # Debug cleaned values
+            st.write(f"Column '{col}' sample after cleaning:", df[col].head(3))
+            
             if df[col].isnull().any():
                 bad_rows = df[df[col].isnull()][['date', col]].head()
                 st.error(f"❌ Found {df[col].isnull().sum()} invalid values in {col} column. Examples:")
@@ -138,6 +150,8 @@ if company_symbol:
         # Sort and reset index
         df.sort_values('date', inplace=True)
         df.reset_index(drop=True, inplace=True)
+         # Debug: Show cleaned data
+        st.write("Cleaned data sample:", df.head(3))
         
         # Calculate 5 months ago from the last date
         last_date = df['date'].max()
@@ -149,6 +163,17 @@ if company_symbol:
         
         # Default to showing last 5 months initially
         default_start = max(five_months_ago.to_pydatetime(), min_date)
+
+        # Debug date ranges
+        st.write(f"Date range - Min: {min_date}, Max: {max_date}, Default Start: {default_start}")
+        
+        # Rest of your processing code...
+
+    except Exception as e:
+        st.error(f"⚠️ Detailed Processing Error: {str(e)}")
+        st.error(f"Error type: {type(e).__name__}")
+        import traceback
+        st.error(f"Traceback: {traceback.format_exc()}")
         
         date_range = st.slider(
             "Select Date Range:",
