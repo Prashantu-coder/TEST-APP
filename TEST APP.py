@@ -120,6 +120,23 @@ if company_symbol:
             bad_dates = df[df['date'].isnull()]['date'].head()
             st.error("❌ Invalid date format in some rows. Exapmles: {bad_dates.tolist()}")
             st.stop()
+        
+        # Modify the numeric conversion section to handle commas in volume:
+        for col in numeric_cols:
+            # Special handling for volume column
+            if col == 'volume':
+                df[col] = df[col].astype(str).str.replace(',', '').astype(float)
+            else:
+                df[col] = pd.to_numeric(
+                    df[col].astype(str).str.replace('[^\d.]', '', regex=True),
+                    errors='coerce'
+                )
+            
+            if df[col].isnull().any():
+                bad_rows = df[df[col].isnull()][['date', col]].head()
+                st.error(f"❌ Found {df[col].isnull().sum()} invalid values in {col} column. Examples:")
+                st.dataframe(bad_rows)
+                st.stop()
 
         # Validate numeric columns
         numeric_cols = ['open', 'high', 'low', 'close', 'volume']
