@@ -1,69 +1,109 @@
 import streamlit as st
 import pandas as pd
+import json
+import os
 
-st.title("Nepali Stock Portfolio Calculator")
+st.title("Nepali Stock Portfolio Calculator with Save/Delete")
 
-# Upload LTP file
-st.header("1. Upload Daily LTP CSV")
-ltp_file = st.file_uploader("Upload LTP CSV (Symbol, LTP)", type=["csv"])
+# --- Portfolio storage file ---
+PORTFOLIO_FILE = "portfolio_data.json"
 
-ltp_df = None
-if ltp_file:
+# Load portfolio from local JSON file if exists
+def load_portfolio():
+    if os.path.exists(PORTFOLIO_FILE):
+        with open(PORTFOLIO_FILE, "r") as f:
+            return pd.DataFrame(json.load(f))
+    else:
+        return pd.DataFrame(columns=["Symbol", "Shares", "BuyPrice"])
+
+# Save portfolio to local JSON file
+def save_portfolio(df):
+    with open(PORTFOLIO_FILE, "w") as f:
+        f.write(df.to_json(orient="records"))
+
+# Initialize portfolio
+if "portfolio" not in st.session_state:
+    st.session_state.portfolio = load_portfolio()
+
+# Display current portfolio with delete option
+st.header("Your Portfolio")
+
+if st.session_state.portfolio.empty:
+    st.info("Your portfolio is empty. Add stocks below.")
+else:
+    # Show portfolio with delete buttons per row
+    for idx, row in st.session_state.portfolio.iterrows():
+        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+        col1.write(f"**{row['Symbol']}**")
+        col2.write(f"Shares: {row['Shares']}")
+        col3.write(f"Buy Price: NPR {row['BuyPrice']:.2f}")
+        if col4.button("Delete", key=f"del_{idx}"):
+            st.session_state.portfolio = st.session_state.portfolio.drop(idx).reset_index(drop=True)
+            save_portfolio(st.session_state.portfolio)
+            st.experimental_rerun()
+
+# Add new stock form
+st.header("Add a Stock to Your Portfolio")
+
+with st.form("add_stock_form"):
+    symbol = st.text_input("Symbol (e.g. NABIL)").upper()
+    shares = st.number_input("Shares", min_value=1, step=1)
+    buy_price = st.number_input("Buy Price (NPR)", min_value=0.01, step=0.01, format="%.2f")
+    submitted = st.form_submit_button("Add Stock")
+    if submitted:
+        if symbol and shares > 0 and buy_price > 0:
+            # Check if symbol already in portfolio
+            if symbol in st.session_state.portfolio["Symbol"].values:
+                st.warning(f"{symbol} already in portfolio. Delete first to re-add.")
+            else:
+                new_entry = pd.DataFrame([{"Symbol": symbol, "Shares": shares, "BuyPrice": buy_price}])
+                st.session_state.portfolio = pd.concat([st.session_state.portfolio, new_entry], ignore_index=True)
+                save_portfolio(st.session_state.portfolio)
+                st.success(f"Added {symbol} to portfolio!")
+                st.experimental_rerun()
+        else:
+            st.error("Please enter valid values.")
+
+# Upload daily LTP CSV
+st.header("Upload Daily LTP CSV (Symbol, LTP)")
+
+ltp_file = st.file_uploader("Upload LTP CSV", type=["csv"])
+
+if ltp_file is not None and not st.session_state.portfolio.empty:
     ltp_df = pd.read_csv(ltp_file)
-    st.write("Uploaded LTP Data:")
-    st.dataframe(ltp_df)
+    # Validate LTP CSV columns
+    if not {"Symbol", "LTP"}.issubset(ltp_df.columns):
+        st.error("LTP CSV must contain 'Symbol' and 'LTP' columns.")
+    else:
+        # Merge with portfolio
+        merged = pd.merge(st.session_state.portfolio, ltp_df, on="Symbol", how="left")
 
-# Portfolio input
-st.header("2. Enter Your Portfolio")
+        # Calculate values
+        merged["CurrentValue"] = merged["LTP"] * merged["Shares"]
+        merged["Investment"] = merged["BuyPrice"] * merged["Shares"]
+        merged["P/L"] = merged["CurrentValue"] - merged["Investment"]
+        merged["P/L %"] = (merged["P/L"] / merged["Investment"]) * 100
 
-# Option to upload portfolio CSV or manual input
-upload_portfolio = st.checkbox("Upload portfolio CSV instead of manual input?")
+        st.header("Portfolio Valuation")
 
-if upload_portfolio:
-    portfolio_file = st.file_uploader("Upload Portfolio CSV (Symbol, Shares, BuyPrice)", type=["csv"])
-    if portfolio_file:
-        portfolio_df = pd.read_csv(portfolio_file)
-else:
-    # Manual input - build a small DataFrame on the fly
-    portfolio_data = []
-    num_rows = st.number_input("How many different stocks in your portfolio?", min_value=1, max_value=50, value=3)
-    for i in range(num_rows):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            symbol = st.text_input(f"Stock Symbol #{i+1}", key=f"sym{i}").upper()
-        with col2:
-            shares = st.number_input(f"Shares #{i+1}", min_value=0, step=1, key=f"shares{i}")
-        with col3:
-            buy_price = st.number_input(f"Buy Price #{i+1}", min_value=0.0, step=0.01, key=f"buy{i}")
-        portfolio_data.append({"Symbol": symbol, "Shares": shares, "BuyPrice": buy_price})
-    portfolio_df = pd.DataFrame(portfolio_data)
+        st.dataframe(merged[["Symbol", "Shares", "BuyPrice", "LTP", "CurrentValue", "Investment", "P/L", "P/L %"]])
 
-if 'portfolio_df' in locals() and ltp_df is not None:
-    # Merge LTP with portfolio on Symbol
-    merged = pd.merge(portfolio_df, ltp_df, on='Symbol', how='left')
+        total_investment = merged["Investment"].sum()
+        total_value = merged["CurrentValue"].sum()
+        total_pl = total_value - total_investment
+        total_pl_pct = (total_pl / total_investment) * 100 if total_investment > 0 else 0
 
-    # Calculate values
-    merged["CurrentValue"] = merged["LTP"] * merged["Shares"]
-    merged["Investment"] = merged["BuyPrice"] * merged["Shares"]
-    merged["P/L"] = merged["CurrentValue"] - merged["Investment"]
-    merged["P/L %"] = (merged["P/L"] / merged["Investment"]) * 100
+        st.markdown(f"**Total Investment:** NPR {total_investment:,.2f}")
+        st.markdown(f"**Current Portfolio Value:** NPR {total_value:,.2f}")
+        st.markdown(f"**Total Profit/Loss:** NPR {total_pl:,.2f} ({total_pl_pct:.2f}%)")
 
-    st.header("Portfolio Summary")
-    st.dataframe(merged)
+        st.header("Portfolio Distribution by Current Value")
+        chart_data = merged.set_index("Symbol")["CurrentValue"]
+        st.bar_chart(chart_data)
 
-    total_investment = merged["Investment"].sum()
-    total_value = merged["CurrentValue"].sum()
-    total_pl = total_value - total_investment
-    total_pl_pct = (total_pl / total_investment) * 100 if total_investment > 0 else 0
-
-    st.markdown(f"**Total Investment:** NPR {total_investment:,.2f}")
-    st.markdown(f"**Current Portfolio Value:** NPR {total_value:,.2f}")
-    st.markdown(f"**Total Profit/Loss:** NPR {total_pl:,.2f} ({total_pl_pct:.2f}%)")
-
-    # Pie chart of portfolio by current value
-    st.header("Portfolio Distribution by Current Value")
-    chart_data = merged.set_index("Symbol")["CurrentValue"]
-    st.bar_chart(chart_data)
+elif ltp_file is not None and st.session_state.portfolio.empty:
+    st.warning("Your portfolio is empty. Please add stocks first.")
 
 else:
-    st.info("Please upload both your portfolio and LTP data to see calculations.")
+    st.info("Upload LTP CSV to see portfolio valuation.")
+
